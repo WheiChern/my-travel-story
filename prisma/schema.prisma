@@ -1,0 +1,221 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  authProvider  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts             Account[]
+  sessions             Session[]
+  trips                Trip[]
+  wishlistDestinations WishlistDestination[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum TripType {
+  family
+  solo
+  special_someone
+  friends
+  business
+  other
+}
+
+model Trip {
+  id             String    @id @default(cuid())
+  userId         String
+  title          String
+  startDate      DateTime
+  endDate        DateTime
+  tripType       TripType  @default(other)
+  primaryCountry String?
+  summary        String?   @db.Text
+  totalCost      Float?
+  currency       String    @default("USD")
+  companions     String[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  places         Place[]
+  media          Media[]
+  itineraryItems ItineraryItem[]
+  costItems      CostItem[]
+}
+
+model Place {
+  id         String    @id @default(cuid())
+  tripId     String
+  name       String
+  country    String
+  city       String
+  latitude   Float
+  longitude  Float
+  visitDate  DateTime?
+  orderIndex Int       @default(0)
+  notes      String?   @db.Text
+
+  trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  media          Media[]
+  itineraryItems ItineraryItem[]
+}
+
+enum MediaSource {
+  google_photos
+  facebook
+  manual_upload
+  takeout_import
+}
+
+enum MediaType {
+  photo
+  video
+}
+
+model Media {
+  id           String      @id @default(cuid())
+  tripId       String
+  placeId      String?
+  source       MediaSource @default(manual_upload)
+  sourceId     String?
+  fileUrl      String
+  thumbnailUrl String?
+  mediaType    MediaType   @default(photo)
+  takenAt      DateTime?
+  latitude     Float?
+  longitude    Float?
+  caption      String?     @db.Text
+  peopleTags   String[]
+  createdAt    DateTime    @default(now())
+
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  place Place? @relation(fields: [placeId], references: [id])
+}
+
+enum TransportMode {
+  flight
+  train
+  bus
+  car
+  ferry
+  walk
+  bike
+  other
+}
+
+model ItineraryItem {
+  id            String         @id @default(cuid())
+  tripId        String
+  date          DateTime
+  time          String?
+  title         String
+  description   String?        @db.Text
+  placeId       String?
+  transportMode TransportMode?
+  costEstimate  Float?
+
+  trip  Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  place Place? @relation(fields: [placeId], references: [id])
+}
+
+enum CostCategory {
+  flights
+  hotels
+  transport
+  food
+  attractions
+  shopping
+  insurance
+  other
+}
+
+model CostItem {
+  id          String       @id @default(cuid())
+  tripId      String
+  category    CostCategory
+  description String
+  amount      Float
+  currency    String       @default("USD")
+  date        DateTime?
+  receiptUrl  String?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+}
+
+model WishlistDestination {
+  id                 String    @id @default(cuid())
+  userId             String
+  destinationCity    String
+  destinationCountry String
+  originCity         String?
+  preferredStartDate DateTime?
+  preferredEndDate   DateTime?
+  cabinClass         String    @default("economy")
+  maxPrice           Float?
+  currency           String    @default("USD")
+  notes              String?   @db.Text
+  alertEnabled       Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fareAlerts FareAlert[]
+}
+
+model FareAlert {
+  id                    String   @id @default(cuid())
+  wishlistDestinationId String
+  provider              String
+  price                 Float
+  currency              String
+  airline               String?
+  flightUrl             String?
+  checkedAt             DateTime @default(now())
+  isTriggered           Boolean  @default(false)
+
+  wishlistDestination WishlistDestination @relation(fields: [wishlistDestinationId], references: [id], onDelete: Cascade)
+}
