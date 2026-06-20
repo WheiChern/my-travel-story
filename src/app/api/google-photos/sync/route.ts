@@ -33,8 +33,8 @@ export async function POST(req: NextRequest) {
     const relevant = await filterRelevantPhotos(allPhotos, trip);
 
     // 3. Skip photos already imported (by filename)
-    const existingFilenames = new Set(trip.media.map((m) => m.filename ?? ""));
-    const toImport = relevant.filter((p) => !existingFilenames.has(p.filename));
+    const existingSourceIds = new Set(trip.media.map((m) => m.sourceId ?? ""));
+    const toImport = relevant.filter((p) => !existingSourceIds.has(p.id));
 
     if (!toImport.length) {
       return NextResponse.json({ imported: 0, message: "All relevant photos are already imported." });
@@ -55,10 +55,9 @@ export async function POST(req: NextRequest) {
         await prisma.media.create({
           data: {
             tripId,
-            filename,
-            url: `/uploads/${filename}`,
-            mimeType: photo.mimeType,
-            source: "upload",
+            sourceId: photo.id,
+            fileUrl: `/uploads/${filename}`,
+            source: "google_photos",
             mediaType: "photo",
             takenAt: photo.creationTime ? new Date(photo.creationTime) : null,
             caption: photo.description ?? null,

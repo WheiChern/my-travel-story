@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Skip already-imported photos
-    const existingFilenames = new Set(trip.media.map((m) => m.filename ?? ""));
+    const existingFilenames = new Set(trip.media.map((m) => m.sourceId ?? ""));
 
     const uploadsDir = path.join(process.cwd(), "public", "uploads");
     await mkdir(uploadsDir, { recursive: true });
@@ -68,8 +68,7 @@ export async function POST(req: NextRequest) {
     const imported: string[] = [];
     for (const photo of photos) {
       if (!photo.baseUrl) continue;
-      const filename = `google_${photo.id}_${photo.filename}`;
-      if (existingFilenames.has(filename)) continue;
+      if (existingFilenames.has(photo.id)) continue;
 
       try {
         // =d downloads full resolution; Picker API requires auth header
@@ -82,15 +81,15 @@ export async function POST(req: NextRequest) {
           continue;
         }
         const buffer = Buffer.from(await dlRes.arrayBuffer());
+        const filename = `google_${photo.id}_${photo.filename}`;
         await writeFile(path.join(uploadsDir, filename), buffer);
 
         await prisma.media.create({
           data: {
             tripId,
-            filename,
-            url: `/uploads/${filename}`,
-            mimeType: photo.mimeType,
-            source: "upload",
+            sourceId: photo.id,
+            fileUrl: `/uploads/${filename}`,
+            source: "google_photos",
             mediaType: "photo",
             takenAt: photo.createTime ? new Date(photo.createTime) : null,
           },
