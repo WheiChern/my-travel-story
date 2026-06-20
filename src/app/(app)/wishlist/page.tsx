@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { fetchWishlist, createWishlistItem, updateWishlistItem, deleteWishlistItem } from "@/lib/api";
-import { MOCK_WISHLIST } from "@/lib/mock-data";
 import type { WishlistDestination } from "@/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,9 +29,9 @@ export default function WishlistPage() {
   const load = async () => {
     try {
       const data = await fetchWishlist();
-      setWishlist(data.length > 0 ? data : MOCK_WISHLIST);
+      setWishlist(data);
     } catch {
-      setWishlist(MOCK_WISHLIST);
+      setWishlist([]);
     } finally {
       setLoading(false);
     }
