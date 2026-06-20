@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGoogleToken } from "@/lib/google-photos";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 
 export const maxDuration = 120;
 
@@ -23,7 +21,7 @@ export async function POST(req: NextRequest) {
     if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
     // Fetch all picked media items from the session
-    const photos: Array<{ id: string; filename: string; mimeType: string; baseUrl: string; createTime: string }> = [];
+    const photos: Array<{ id: string; mimeType: string; baseUrl: string; createTime: string }> = [];
     let pageToken: string | undefined;
 
     do {
@@ -46,7 +44,6 @@ export async function POST(req: NextRequest) {
       for (const item of data.mediaItems ?? []) {
         photos.push({
           id: item.id,
-          filename: item.mediaFile?.filename ?? item.id,
           mimeType: item.mediaFile?.mimeType ?? "image/jpeg",
           baseUrl: item.mediaFile?.baseUrl ?? "",
           createTime: item.createTime ?? "",
@@ -60,44 +57,31 @@ export async function POST(req: NextRequest) {
     }
 
     // Skip already-imported photos
-    const existingFilenames = new Set(trip.media.map((m) => m.sourceId ?? ""));
-
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadsDir, { recursive: true });
+    const existingIds = new Set(trip.media.map((m) => m.sourceId ?? ""));
 
     const imported: string[] = [];
     for (const photo of photos) {
-      if (!photo.baseUrl) continue;
-      if (existingFilenames.has(photo.id)) continue;
+      if (!photo.baseUrl || existingIds.has(photo.id)) continue;
 
       try {
-        // =d downloads full resolution; Picker API requires auth header
-        const dlRes = await fetch(`${photo.baseUrl}=d`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(30000),
-        });
-        if (!dlRes.ok) {
-          console.error(`Download failed for ${photo.filename}: ${dlRes.status} ${await dlRes.text()}`);
-          continue;
-        }
-        const buffer = Buffer.from(await dlRes.arrayBuffer());
-        const filename = `google_${photo.id}_${photo.filename}`;
-        await writeFile(path.join(uploadsDir, filename), buffer);
+        // Store the baseUrl with =w2048-h2048 for a high-res display URL.
+        // Google Picker baseUrls are valid for ~60 minutes without auth.
+        const fileUrl = `${photo.baseUrl}=w2048-h2048`;
 
         await prisma.media.create({
           data: {
             tripId,
             sourceId: photo.id,
-            fileUrl: `/uploads/${filename}`,
+            fileUrl,
             source: "google_photos",
             mediaType: "photo",
             takenAt: photo.createTime ? new Date(photo.createTime) : null,
           },
         });
 
-        imported.push(filename);
-      } catch {
-        // skip individual failures
+        imported.push(photo.id);
+      } catch (e) {
+        console.error("Failed to save photo", photo.id, e);
       }
     }
 
