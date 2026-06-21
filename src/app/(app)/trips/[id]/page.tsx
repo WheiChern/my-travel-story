@@ -199,6 +199,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [uploading, setUploading] = useState(false);
   const [captions, setCaptions] = useState<Record<string, string>>({});
   const [savingCaption, setSavingCaption] = useState<string | null>(null);
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Partial<StoryboardData>>({});
 
   useEffect(() => {
     fetch("/api/google-photos/status").then(r => r.json()).then(d => setGoogleConnected(d.connected));
@@ -232,6 +234,18 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       setSavingCaption(null);
     }
   };
+
+  const startEdit = (section: string) => {
+    if (!storyboard) return;
+    setEditDraft({ ...storyboard });
+    setEditingSection(section);
+  };
+  const saveEdit = () => {
+    if (!storyboard) return;
+    setStoryboard({ ...storyboard, ...editDraft });
+    setEditingSection(null);
+  };
+  const cancelEdit = () => setEditingSection(null);
 
   const openGooglePicker = async () => {
     // If not connected, send user to connect flow
@@ -743,62 +757,255 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
               )}
               {storyboard && (
                 <div className="space-y-5">
+
+                  {/* ── Trip Summary ── */}
                   <div className="rounded-xl p-6" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.15)" }}>
-                    <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#C89B73" }}>Trip Summary</h4>
-                    {storyboard.tripSummary.split("\n\n").map((p, i) => (
-                      <p key={i} className="leading-relaxed mb-2" style={{ color: "rgba(248,245,240,0.75)" }}>{p}</p>
-                    ))}
-                  </div>
-                  {storyboard.dayByDay.length > 0 && (
-                    <div className="rounded-xl p-6" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider mb-4" style={{ color: "#C89B73" }}>Day by Day</h4>
-                      <div className="space-y-4">
-                        {storyboard.dayByDay.map((day, i) => (
-                          <div key={i} className="flex gap-3">
-                            <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: "rgba(200,155,115,0.18)", color: "#C89B73" }}>{i + 1}</div>
-                            <div>
-                              <p className="font-medium text-sm" style={{ color: "#F8F5F0" }}>{day.title}</p>
-                              <p className="text-sm mt-0.5" style={{ color: "rgba(248,245,240,0.55)" }}>{day.story}</p>
-                            </div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>Trip Summary</h4>
+                      {editingSection !== "summary"
+                        ? <button onClick={() => startEdit("summary")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                        : <div className="flex gap-2">
+                            <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                            <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
                           </div>
-                        ))}
+                      }
+                    </div>
+                    {editingSection === "summary" ? (
+                      <textarea
+                        rows={10}
+                        value={editDraft.tripSummary ?? ""}
+                        onChange={e => setEditDraft(d => ({ ...d, tripSummary: e.target.value }))}
+                        className="w-full rounded-xl px-3 py-2.5 text-sm leading-relaxed resize-y focus:outline-none"
+                        style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.25)", color: "#F8F5F0" }}
+                      />
+                    ) : (
+                      storyboard.tripSummary.split("\n\n").map((p, i) => (
+                        <p key={i} className="leading-relaxed mb-2" style={{ color: "rgba(248,245,240,0.75)" }}>{p}</p>
+                      ))
+                    )}
+                  </div>
+
+                  {/* ── Day by Day ── */}
+                  {(storyboard.dayByDay.length > 0 || editingSection === "dayByDay") && (
+                    <div className="rounded-xl p-6" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>Day by Day</h4>
+                        {editingSection !== "dayByDay"
+                          ? <button onClick={() => startEdit("dayByDay")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                          : <div className="flex gap-2">
+                              <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                              <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
+                            </div>
+                        }
                       </div>
+                      {editingSection === "dayByDay" ? (
+                        <div className="space-y-4">
+                          {(editDraft.dayByDay ?? []).map((day, i) => (
+                            <div key={i} className="flex gap-3 items-start">
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-1" style={{ background: "rgba(200,155,115,0.18)", color: "#C89B73" }}>{i + 1}</div>
+                              <div className="flex-1 space-y-1.5">
+                                <input
+                                  value={day.title}
+                                  onChange={e => setEditDraft(d => ({ ...d, dayByDay: (d.dayByDay ?? []).map((dd, ii) => ii === i ? { ...dd, title: e.target.value } : dd) }))}
+                                  placeholder="Day title"
+                                  className="w-full rounded-lg px-2.5 py-1.5 text-sm font-medium focus:outline-none"
+                                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}
+                                />
+                                <textarea
+                                  rows={3}
+                                  value={day.story}
+                                  onChange={e => setEditDraft(d => ({ ...d, dayByDay: (d.dayByDay ?? []).map((dd, ii) => ii === i ? { ...dd, story: e.target.value } : dd) }))}
+                                  placeholder="What happened this day…"
+                                  className="w-full rounded-lg px-2.5 py-1.5 text-sm resize-y focus:outline-none"
+                                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "rgba(248,245,240,0.75)" }}
+                                />
+                              </div>
+                              <button onClick={() => setEditDraft(d => ({ ...d, dayByDay: (d.dayByDay ?? []).filter((_, ii) => ii !== i) }))}
+                                className="mt-1 flex-shrink-0 transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.3)" }}><X className="w-4 h-4" /></button>
+                            </div>
+                          ))}
+                          <button onClick={() => setEditDraft(d => ({ ...d, dayByDay: [...(d.dayByDay ?? []), { date: "", title: "New Day", story: "" }] }))}
+                            className="flex items-center gap-1.5 text-xs transition-opacity hover:opacity-70 mt-1"
+                            style={{ color: "#C89B73" }}>
+                            <span className="text-base leading-none">+</span> Add day
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {storyboard.dayByDay.map((day, i) => (
+                            <div key={i} className="flex gap-3">
+                              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: "rgba(200,155,115,0.18)", color: "#C89B73" }}>{i + 1}</div>
+                              <div>
+                                <p className="font-medium text-sm" style={{ color: "#F8F5F0" }}>{day.title}</p>
+                                <p className="text-sm mt-0.5" style={{ color: "rgba(248,245,240,0.55)" }}>{day.story}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* ── Food & Sights ── */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {storyboard.foodHighlights.length > 0 && (
+                    {/* Food Highlights */}
+                    {(storyboard.foodHighlights.length > 0 || editingSection === "food") && (
                       <div className="rounded-xl p-5" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#C89B73" }}>🍜 Food Highlights</h4>
-                        <ul className="space-y-1.5">{storyboard.foodHighlights.map((f, i) => <li key={i} className="text-sm" style={{ color: "rgba(248,245,240,0.65)" }}>• {f}</li>)}</ul>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>🍜 Food Highlights</h4>
+                          {editingSection !== "food"
+                            ? <button onClick={() => startEdit("food")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                            : <div className="flex gap-2">
+                                <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                                <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
+                              </div>
+                          }
+                        </div>
+                        {editingSection === "food" ? (
+                          <div className="space-y-2">
+                            {(editDraft.foodHighlights ?? []).map((item, i) => (
+                              <div key={i} className="flex gap-2 items-start">
+                                <textarea rows={2} value={item}
+                                  onChange={e => setEditDraft(d => ({ ...d, foodHighlights: (d.foodHighlights ?? []).map((x, ii) => ii === i ? e.target.value : x) }))}
+                                  className="flex-1 rounded-lg px-2.5 py-1.5 text-sm resize-none focus:outline-none"
+                                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}
+                                />
+                                <button onClick={() => setEditDraft(d => ({ ...d, foodHighlights: (d.foodHighlights ?? []).filter((_, ii) => ii !== i) }))}
+                                  style={{ color: "rgba(248,245,240,0.3)" }}><X className="w-3.5 h-3.5 mt-2" /></button>
+                              </div>
+                            ))}
+                            <button onClick={() => setEditDraft(d => ({ ...d, foodHighlights: [...(d.foodHighlights ?? []), ""] }))}
+                              className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "#C89B73" }}>
+                              <span className="text-base leading-none">+</span> Add item
+                            </button>
+                          </div>
+                        ) : (
+                          <ul className="space-y-1.5">{storyboard.foodHighlights.map((f, i) => <li key={i} className="text-sm" style={{ color: "rgba(248,245,240,0.65)" }}>• {f}</li>)}</ul>
+                        )}
                       </div>
                     )}
-                    {storyboard.sightsVisited.length > 0 && (
+
+                    {/* Sights */}
+                    {(storyboard.sightsVisited.length > 0 || editingSection === "sights") && (
                       <div className="rounded-xl p-5" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
-                        <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#C89B73" }}>🏛️ Sights</h4>
-                        <ul className="space-y-1.5">{storyboard.sightsVisited.map((s, i) => <li key={i} className="text-sm" style={{ color: "rgba(248,245,240,0.65)" }}>• {s}</li>)}</ul>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>🏛️ Sights</h4>
+                          {editingSection !== "sights"
+                            ? <button onClick={() => startEdit("sights")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                            : <div className="flex gap-2">
+                                <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                                <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
+                              </div>
+                          }
+                        </div>
+                        {editingSection === "sights" ? (
+                          <div className="space-y-2">
+                            {(editDraft.sightsVisited ?? []).map((item, i) => (
+                              <div key={i} className="flex gap-2 items-start">
+                                <textarea rows={2} value={item}
+                                  onChange={e => setEditDraft(d => ({ ...d, sightsVisited: (d.sightsVisited ?? []).map((x, ii) => ii === i ? e.target.value : x) }))}
+                                  className="flex-1 rounded-lg px-2.5 py-1.5 text-sm resize-none focus:outline-none"
+                                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}
+                                />
+                                <button onClick={() => setEditDraft(d => ({ ...d, sightsVisited: (d.sightsVisited ?? []).filter((_, ii) => ii !== i) }))}
+                                  style={{ color: "rgba(248,245,240,0.3)" }}><X className="w-3.5 h-3.5 mt-2" /></button>
+                              </div>
+                            ))}
+                            <button onClick={() => setEditDraft(d => ({ ...d, sightsVisited: [...(d.sightsVisited ?? []), ""] }))}
+                              className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "#C89B73" }}>
+                              <span className="text-base leading-none">+</span> Add item
+                            </button>
+                          </div>
+                        ) : (
+                          <ul className="space-y-1.5">{storyboard.sightsVisited.map((s, i) => <li key={i} className="text-sm" style={{ color: "rgba(248,245,240,0.65)" }}>• {s}</li>)}</ul>
+                        )}
                       </div>
                     )}
                   </div>
-                  {storyboard.bestMemories.length > 0 && (
+
+                  {/* ── Best Memories ── */}
+                  {(storyboard.bestMemories.length > 0 || editingSection === "memories") && (
                     <div className="rounded-xl p-6" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#C89B73" }}>✨ Best Memories</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {storyboard.bestMemories.map((m, i) => (
-                          <div key={i} className="rounded-lg p-3 text-sm italic" style={{ background: "rgba(200,155,115,0.07)", color: "rgba(248,245,240,0.65)" }}>"{m}"</div>
-                        ))}
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>✨ Best Memories</h4>
+                        {editingSection !== "memories"
+                          ? <button onClick={() => startEdit("memories")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                          : <div className="flex gap-2">
+                              <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                              <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
+                            </div>
+                        }
                       </div>
+                      {editingSection === "memories" ? (
+                        <div className="space-y-2">
+                          {(editDraft.bestMemories ?? []).map((item, i) => (
+                            <div key={i} className="flex gap-2 items-start">
+                              <textarea rows={2} value={item}
+                                onChange={e => setEditDraft(d => ({ ...d, bestMemories: (d.bestMemories ?? []).map((x, ii) => ii === i ? e.target.value : x) }))}
+                                className="flex-1 rounded-lg px-2.5 py-1.5 text-sm italic resize-none focus:outline-none"
+                                style={{ background: "rgba(200,155,115,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}
+                              />
+                              <button onClick={() => setEditDraft(d => ({ ...d, bestMemories: (d.bestMemories ?? []).filter((_, ii) => ii !== i) }))}
+                                style={{ color: "rgba(248,245,240,0.3)" }}><X className="w-3.5 h-3.5 mt-2" /></button>
+                            </div>
+                          ))}
+                          <button onClick={() => setEditDraft(d => ({ ...d, bestMemories: [...(d.bestMemories ?? []), ""] }))}
+                            className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "#C89B73" }}>
+                            <span className="text-base leading-none">+</span> Add memory
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {storyboard.bestMemories.map((m, i) => (
+                            <div key={i} className="rounded-lg p-3 text-sm italic" style={{ background: "rgba(200,155,115,0.07)", color: "rgba(248,245,240,0.65)" }}>"{m}"</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {storyboard.travelTips.length > 0 && (
+
+                  {/* ── Travel Tips ── */}
+                  {(storyboard.travelTips.length > 0 || editingSection === "tips") && (
                     <div className="rounded-xl p-5" style={{ background: "rgba(248,245,240,0.05)", border: "1px solid rgba(200,155,115,0.12)" }}>
-                      <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "#C89B73" }}>💡 Travel Tips</h4>
-                      <ul className="space-y-2">{storyboard.travelTips.map((tip, i) => (
-                        <li key={i} className="text-sm flex gap-2" style={{ color: "rgba(248,245,240,0.65)" }}>
-                          <span className="font-bold flex-shrink-0" style={{ color: "#C89B73" }}>{i + 1}.</span>{tip}
-                        </li>
-                      ))}</ul>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#C89B73" }}>💡 Travel Tips</h4>
+                        {editingSection !== "tips"
+                          ? <button onClick={() => startEdit("tips")} className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "rgba(248,245,240,0.4)" }}><Edit2 className="w-3 h-3" /> Edit</button>
+                          : <div className="flex gap-2">
+                              <button onClick={saveEdit} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium" style={{ background: "#C89B73", color: "#222" }}><Check className="w-3 h-3" /> Save</button>
+                              <button onClick={cancelEdit} className="px-2.5 py-1 rounded-lg text-xs" style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.4)" }}>Cancel</button>
+                            </div>
+                        }
+                      </div>
+                      {editingSection === "tips" ? (
+                        <div className="space-y-2">
+                          {(editDraft.travelTips ?? []).map((item, i) => (
+                            <div key={i} className="flex gap-2 items-start">
+                              <span className="font-bold text-sm flex-shrink-0 mt-2" style={{ color: "#C89B73" }}>{i + 1}.</span>
+                              <textarea rows={2} value={item}
+                                onChange={e => setEditDraft(d => ({ ...d, travelTips: (d.travelTips ?? []).map((x, ii) => ii === i ? e.target.value : x) }))}
+                                className="flex-1 rounded-lg px-2.5 py-1.5 text-sm resize-none focus:outline-none"
+                                style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}
+                              />
+                              <button onClick={() => setEditDraft(d => ({ ...d, travelTips: (d.travelTips ?? []).filter((_, ii) => ii !== i) }))}
+                                style={{ color: "rgba(248,245,240,0.3)" }}><X className="w-3.5 h-3.5 mt-2" /></button>
+                            </div>
+                          ))}
+                          <button onClick={() => setEditDraft(d => ({ ...d, travelTips: [...(d.travelTips ?? []), ""] }))}
+                            className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70" style={{ color: "#C89B73" }}>
+                            <span className="text-base leading-none">+</span> Add tip
+                          </button>
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">{storyboard.travelTips.map((tip, i) => (
+                          <li key={i} className="text-sm flex gap-2" style={{ color: "rgba(248,245,240,0.65)" }}>
+                            <span className="font-bold flex-shrink-0" style={{ color: "#C89B73" }}>{i + 1}.</span>{tip}
+                          </li>
+                        ))}</ul>
+                      )}
                     </div>
                   )}
+
                 </div>
               )}
             </div>
