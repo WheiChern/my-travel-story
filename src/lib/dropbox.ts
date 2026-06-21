@@ -27,9 +27,11 @@ export async function getDropboxToken(userId: string): Promise<string | null> {
     if (!refreshed) return null;
     dropbox.accessToken = refreshed.accessToken;
     dropbox.expiresAt = refreshed.expiresAt;
+    // Merge — preserve any other tokens (e.g. Google)
+    const fullParsed = parsed as Record<string, unknown>;
     await prisma.user.update({
       where: { id: userId },
-      data: { authProvider: JSON.stringify({ dropbox }) },
+      data: { authProvider: JSON.stringify({ ...fullParsed, dropbox }) },
     });
   }
 

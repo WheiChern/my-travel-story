@@ -34,12 +34,29 @@ export async function GET(req: NextRequest) {
 
   const tokens = await tokenRes.json();
 
-  // Store token against the demo user (in production, use session userId)
-  await prisma.user.update({
+  // Preserve existing authProvider fields (e.g. Google tokens)
+  const user = await prisma.user.findUnique({ where: { id: "demo-user" } });
+  let existing: Record<string, unknown> = {};
+  if (user?.authProvider) {
+    try { existing = JSON.parse(user.authProvider); } catch { /* ignore */ }
+  }
+
+  await prisma.user.upsert({
     where: { id: "demo-user" },
-    data: {
-      // Store in authProvider field as JSON for now
-      // TODO: add a dedicated DropboxToken table in a future migration
+    update: {
+      authProvider: JSON.stringify({
+        ...existing,
+        dropbox: {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: Date.now() + (tokens.expires_in ?? 14400) * 1000,
+          accountId: tokens.account_id,
+        },
+      }),
+    },
+    create: {
+      id: "demo-user",
+      email: "demo@travelmap.app",
       authProvider: JSON.stringify({
         dropbox: {
           accessToken: tokens.access_token,
