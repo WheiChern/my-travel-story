@@ -45,28 +45,28 @@ Media captions: ${trip.media.map((m: { caption?: string | null }) => m.caption).
 
 Total cost: $${totalCost.toLocaleString()} ${trip.currency} across ${trip.costItems.length} categories
 
-Write a storyboard response as JSON with exactly these fields:
+Write a storyboard response as JSON with exactly these fields. Be concise — keep all strings short to stay within token limits:
 {
-  "tripSummary": "2-3 paragraph vivid summary of the trip as a travel journal entry. Mention specific places, food, moments. Write in first person.",
+  "tripSummary": "2 paragraphs max. Vivid first-person travel journal. Mention specific places and moments.",
   "dayByDay": [
-    { "date": "YYYY-MM-DD", "title": "Day X: Short title", "story": "2-3 sentence story for this day" }
+    { "date": "YYYY-MM-DD", "title": "Day X: Short title (5 words max)", "story": "1 sentence only." }
   ],
-  "foodHighlights": ["3-5 specific food/dining highlights based on the destination culture"],
-  "sightsVisited": ["3-6 key sights or experiences based on the places visited"],
-  "bestMemories": ["3-4 evocative memory snippets in first person"],
-  "travelTips": ["2-3 practical tips for this destination based on the trip"],
+  "foodHighlights": ["3 items max. One sentence each."],
+  "sightsVisited": ["4 items max. One sentence each."],
+  "bestMemories": ["3 items max. One vivid sentence each."],
+  "travelTips": ["2 items max. One sentence each."],
   "suggestedCaptions": [
-    { "description": "What the photo might show", "caption": "Short evocative caption" }
+    { "description": "brief", "caption": "Short caption" }
   ]
 }
 
-Base the day-by-day on the actual itinerary dates above. If no itinerary, generate logical days based on the trip length and places.
-Return ONLY valid JSON.`;
+Base the day-by-day on the actual itinerary dates above. If no itinerary, generate logical days.
+Return ONLY valid JSON with no extra text.`;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 8000,
+      max_tokens: 4000,
       messages: [{ role: "user", content: prompt }],
     });
 
