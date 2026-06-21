@@ -27,13 +27,18 @@ interface DropboxEntry {
 
 type ImportStep = "connect" | "browse" | "extracting" | "review" | "done";
 
+// Files we can actually extract booking data from
+const SUPPORTED_EXTS = new Set(["pdf", "docx", "doc", "txt", "jpg", "jpeg", "png", "webp"]);
+// Photos/videos that look like bookings but aren't — hidden from the browser
+const SKIP_EXTS = new Set(["heic", "mov", "mp4", "avi", "ds_store", "localized"]);
+
 const FILE_ICON: Record<string, React.ElementType> = {
   folder: FolderOpen,
   pdf: FileText,
   docx: FileText,
   doc: FileText,
   txt: FileText,
-  jpg: Image, jpeg: Image, png: Image, heic: Image, webp: Image,
+  jpg: Image, jpeg: Image, png: Image, webp: Image,
 };
 
 function fileExt(name: string) {
@@ -89,7 +94,13 @@ function ImportPageInner() {
       const res = await fetch(`/api/dropbox/files?path=${encodeURIComponent(path)}`);
       if (!res.ok) throw new Error("Failed to load files");
       const data = await res.json();
-      setEntries(data.entries ?? []);
+      // Hide files we can't extract from (photos, videos) — they cause confusing errors
+      const filtered = (data.entries ?? []).filter((e: DropboxEntry) => {
+        if (e[".tag"] === "folder") return true;
+        const ext = e.name.toLowerCase().split(".").pop() ?? "";
+        return !SKIP_EXTS.has(ext);
+      });
+      setEntries(filtered);
     } catch {
       setEntries([]);
     } finally {
@@ -424,6 +435,14 @@ function ReviewPanel({
 
   return (
     <div className="space-y-6">
+      {/* Partial-failure warnings */}
+      {data.warnings?.map((w, i) => (
+        <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+          <p className="text-yellow-300 text-xs">{w}</p>
+        </div>
+      ))}
+
       {/* Confidence badge */}
       <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-xl w-fit ${
         data.confidence === "high"

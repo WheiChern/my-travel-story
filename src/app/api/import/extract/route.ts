@@ -6,7 +6,10 @@ export const maxDuration = 120;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".heic", ".webp"];
+// Images are only useful if they're scanned booking documents — vacation photos yield nothing.
+// We still support them but warn in the UI. HEIC from iPhone is nearly always a photo, not a doc.
+const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp"];
+const SKIP_EXTS = [".heic", ".mov", ".mp4", ".avi", ".ds_store", ".localized"];
 
 function detectImageMediaType(buffer: Buffer): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
   if (buffer[0] === 0x89 && buffer[1] === 0x50) return "image/png";
@@ -23,15 +26,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
-    const results = await Promise.all(paths.map((path) => extractFile(path)));
+    // Filter out unsupported file types before even downloading
+    const skipped = paths.filter(p => {
+      const ext = p.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+      return SKIP_EXTS.includes(ext);
+    });
+    const toProcess = paths.filter(p => {
+      const ext = p.toLowerCase().match(/\.[^.]+$/)?.[0] ?? "";
+      return !SKIP_EXTS.includes(ext);
+    });
+
+    if (!toProcess.length) {
+      return NextResponse.json({
+        error: `No supported files selected. Skipped: ${skipped.map(p => p.split("/").pop()).join(", ")}. Use PDF, DOCX, TXT, JPG, or PNG booking documents.`
+      }, { status: 400 });
+    }
+
+    // Use allSettled so one bad file never kills the rest
+    const settled = await Promise.allSettled(toProcess.map((path) => extractFile(path)));
+    const results = settled.map(r => r.status === "fulfilled" ? r.value : null);
     const successful = results.filter((r) => r !== null);
+    const failedCount = settled.filter(r => r.status === "rejected").length;
 
     if (!successful.length) {
-      return NextResponse.json({ error: "Could not extract data from any files. Make sure the files contain readable text (booking confirmations, itineraries, hotel/flight PDFs)." }, { status: 422 });
+      const hint = skipped.length
+        ? ` (${skipped.length} file(s) were skipped — images and videos are not booking documents)`
+        : "";
+      return NextResponse.json({ error: `Could not extract data from any files${hint}. Select booking confirmations, itineraries, hotel/flight PDFs or Word docs.` }, { status: 422 });
     }
 
     // Merge all extracted data into a single trip suggestion
     const merged = await mergeExtractions(successful as ExtractedData[]);
+
+    // Surface partial failures as a warning on the result
+    if (failedCount > 0 || skipped.length > 0) {
+      merged.warnings = [
+        ...(failedCount > 0 ? [`${failedCount} file(s) could not be read`] : []),
+        ...(skipped.length > 0 ? [`${skipped.length} unsupported file(s) skipped (images/videos)`] : []),
+      ];
+    }
+
     return NextResponse.json(merged);
   } catch (err) {
     console.error("Extract route error:", err);
@@ -186,6 +220,7 @@ const EXTRACTION_PROMPT = `Extract all travel booking and itinerary information 
 Only include fields you can actually find in the document. Use null for unknown dates. Return ONLY valid JSON, no explanation.`;
 
 export interface ExtractedData {
+  warnings?: string[];
   title?: string;
   startDate?: string;
   endDate?: string;
