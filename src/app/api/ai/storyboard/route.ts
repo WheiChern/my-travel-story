@@ -45,22 +45,22 @@ Media captions: ${trip.media.map((m: { caption?: string | null }) => m.caption).
 
 Total cost: $${totalCost.toLocaleString()} ${trip.currency} across ${trip.costItems.length} categories
 
-Write a storyboard response as JSON with exactly these fields. Be concise — keep all strings short to stay within token limits:
+Write a storyboard response as JSON with exactly these fields:
 {
-  "tripSummary": "2 paragraphs max. Vivid first-person travel journal. Mention specific places and moments.",
+  "tripSummary": "2-3 paragraph vivid summary as a travel journal entry. First person, specific places, food, moments.",
   "dayByDay": [
-    { "date": "YYYY-MM-DD", "title": "Day X: Short title (5 words max)", "story": "1 sentence only." }
+    { "date": "YYYY-MM-DD", "title": "Day X: Short title", "story": "2-3 sentence story for this day" }
   ],
-  "foodHighlights": ["3 items max. One sentence each."],
-  "sightsVisited": ["4 items max. One sentence each."],
-  "bestMemories": ["3 items max. One vivid sentence each."],
-  "travelTips": ["2 items max. One sentence each."],
+  "foodHighlights": ["3-5 specific food/dining highlights based on the destination culture"],
+  "sightsVisited": ["3-6 key sights or experiences based on the places visited"],
+  "bestMemories": ["3-4 evocative memory snippets in first person"],
+  "travelTips": ["2-3 practical tips for this destination based on the trip"],
   "suggestedCaptions": [
-    { "description": "brief", "caption": "Short caption" }
+    { "description": "What the photo might show", "caption": "Short evocative caption" }
   ]
 }
 
-Base the day-by-day on the actual itinerary dates above. If no itinerary, generate logical days.
+Base the day-by-day on the actual itinerary dates above. If no itinerary, generate logical days based on trip length and places.
 Return ONLY valid JSON with no extra text.`;
 
   try {
@@ -86,6 +86,12 @@ Return ONLY valid JSON with no extra text.`;
   } catch (error) {
     console.error("Storyboard error:", error);
     const msg = error instanceof Error ? error.message : String(error);
+    const status = (error as { status?: number }).status ?? 500;
+
+    // Detect billing / quota errors and surface a clear top-up message
+    if (status === 429 || msg.toLowerCase().includes("credit") || msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("billing") || msg.toLowerCase().includes("rate limit")) {
+      return NextResponse.json({ error: "LIMIT_REACHED", detail: msg }, { status: 429 });
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

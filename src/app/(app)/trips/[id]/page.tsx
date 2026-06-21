@@ -335,7 +335,13 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tripId: id }),
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error((e as { error?: string }).error ?? "Failed"); }
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({})) as { error?: string; detail?: string };
+        if (res.status === 429 || e.error === "LIMIT_REACHED") {
+          throw new Error("LIMIT_REACHED");
+        }
+        throw new Error(e.error ?? "Failed");
+      }
       const data = await res.json() as StoryboardData;
       setStoryboard(data);
       setEditedSummary(data.tripSummary);
@@ -785,7 +791,23 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                   {storyLoading ? "Generating…" : storyboard ? "Regenerate" : "Generate Story"}
                 </button>
               </div>
-              {storyError && <div className="rounded-lg p-4 text-sm" style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", color: "#f87171" }}>{storyError}</div>}
+              {storyError && (
+                storyError === "LIMIT_REACHED" ? (
+                  <div className="rounded-xl p-5" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)" }}>
+                    <p className="font-semibold text-sm mb-1" style={{ color: "#fbbf24" }}>⚠️ AI usage limit reached</p>
+                    <p className="text-sm mb-3" style={{ color: "rgba(248,245,240,0.6)" }}>
+                      Your Anthropic API credit has run out. Top up to continue generating stories.
+                    </p>
+                    <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                      style={{ background: "#fbbf24", color: "#222" }}>
+                      Top up at console.anthropic.com →
+                    </a>
+                  </div>
+                ) : (
+                  <div className="rounded-lg p-4 text-sm" style={{ background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.3)", color: "#f87171" }}>{storyError}</div>
+                )
+              )}
               {!storyboard && !storyLoading && (
                 <div className="rounded-xl p-12 text-center" style={{ background: "rgba(248,245,240,0.04)", border: "1px solid rgba(200,155,115,0.12)" }}>
                   <Sparkles className="w-12 h-12 mx-auto mb-4 opacity-30" style={{ color: "#C89B73" }} />
