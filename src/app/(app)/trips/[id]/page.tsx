@@ -197,6 +197,8 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [activePanel, setActivePanel] = useState<SidePanel | null>(null);
   const [videoSpeed, setVideoSpeed] = useState(4);
   const [uploading, setUploading] = useState(false);
+  const [captions, setCaptions] = useState<Record<string, string>>({});
+  const [savingCaption, setSavingCaption] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/google-photos/status").then(r => r.json()).then(d => setGoogleConnected(d.connected));
@@ -204,10 +206,32 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     fetchTrip(id)
-      .then(setTrip)
+      .then(t => {
+        setTrip(t);
+        const initial: Record<string, string> = {};
+        t.media.forEach(m => { initial[m.id] = m.caption ?? ""; });
+        setCaptions(initial);
+      })
       .catch(() => setTrip(MOCK_TRIPS.find(t => t.id === id) ?? null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const saveCaption = async (mediaId: string) => {
+    setSavingCaption(mediaId);
+    try {
+      await fetch(`/api/media/${mediaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption: captions[mediaId] ?? "" }),
+      });
+      setTrip(t => t ? {
+        ...t,
+        media: t.media.map(m => m.id === mediaId ? { ...m, caption: captions[mediaId] ?? "" } : m),
+      } : t);
+    } finally {
+      setSavingCaption(null);
+    }
+  };
 
   const openGooglePicker = async () => {
     // If not connected, send user to connect flow
@@ -455,10 +479,11 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                 {activePanel === "video" && (
                   <div className="rounded-2xl p-5" style={{ background: "rgba(248,245,240,0.04)", border: "1px solid rgba(200,155,115,0.18)" }}>
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold" style={{ color: "#F8F5F0" }}>Video Settings</h3>
+                      <h3 className="font-semibold" style={{ color: "#F8F5F0" }}>Edit Video</h3>
                       <button onClick={() => setActivePanel(null)} style={{ color: "rgba(248,245,240,0.35)" }}><X className="w-4 h-4" /></button>
                     </div>
-                    <div className="space-y-4">
+                    <div className="space-y-5">
+                      {/* Speed */}
                       <div>
                         <label className="text-xs font-medium uppercase tracking-wider block mb-2" style={{ color: "#C89B73" }}>
                           Seconds per photo: {videoSpeed}s
@@ -470,17 +495,66 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
                           <span>Fast (2s)</span><span>Slow (8s)</span>
                         </div>
                       </div>
+
+                      {/* Per-photo caption editor */}
                       <div>
-                        <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Captions</label>
-                        <p className="text-xs" style={{ color: "rgba(248,245,240,0.45)" }}>
-                          {storyboard?.suggestedCaptions?.length
-                            ? `Using ${storyboard.suggestedCaptions.length} AI-generated captions`
-                            : "Generate a Story to add AI captions to your video"}
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Photos</label>
-                        <p className="text-xs" style={{ color: "rgba(248,245,240,0.45)" }}>{trip.media.length} photos in slideshow</p>
+                        <label className="text-xs font-medium uppercase tracking-wider block mb-3" style={{ color: "#C89B73" }}>
+                          Photo Captions ({trip.media.length})
+                        </label>
+                        {trip.media.length === 0 ? (
+                          <p className="text-xs" style={{ color: "rgba(248,245,240,0.35)" }}>
+                            No photos yet — import from Google Photos or upload.
+                          </p>
+                        ) : (
+                          <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                            {trip.media.map((photo, i) => (
+                              <div key={photo.id} className="flex gap-3 items-start">
+                                {/* Thumbnail */}
+                                <div className="flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden relative"
+                                  style={{ background: "#111" }}>
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={photo.fileUrl.includes("lh3.googleusercontent.com")
+                                      ? `/api/image-proxy/${photo.id}`
+                                      : photo.fileUrl}
+                                    alt={`Photo ${i + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute bottom-0 left-0 right-0 text-center text-white"
+                                    style={{ fontSize: "0.55rem", background: "rgba(0,0,0,0.5)", padding: "1px 0" }}>
+                                    {i + 1}
+                                  </div>
+                                </div>
+                                {/* Caption input + save */}
+                                <div className="flex-1 flex gap-1.5">
+                                  <textarea
+                                    rows={2}
+                                    placeholder="Add a caption…"
+                                    value={captions[photo.id] ?? ""}
+                                    onChange={e => setCaptions(c => ({ ...c, [photo.id]: e.target.value }))}
+                                    className="flex-1 rounded-lg px-2.5 py-1.5 text-xs leading-snug resize-none focus:outline-none"
+                                    style={{
+                                      background: "rgba(248,245,240,0.07)",
+                                      border: "1px solid rgba(200,155,115,0.2)",
+                                      color: "#F8F5F0",
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => saveCaption(photo.id)}
+                                    disabled={savingCaption === photo.id}
+                                    className="flex-shrink-0 w-7 h-7 mt-0.5 rounded-lg flex items-center justify-center disabled:opacity-40"
+                                    style={{ background: "rgba(200,155,115,0.2)", color: "#C89B73" }}
+                                    title="Save caption"
+                                  >
+                                    {savingCaption === photo.id
+                                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                                      : <Check className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
