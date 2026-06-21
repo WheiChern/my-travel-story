@@ -5,6 +5,7 @@ export async function GET(req: NextRequest) {
   const { searchParams, origin } = new URL(req.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
+  const state = searchParams.get("state") ?? "/dashboard";
 
   if (error || !code) {
     return NextResponse.redirect(`${origin}/settings?google=error`);
@@ -29,12 +30,18 @@ export async function GET(req: NextRequest) {
   }
 
   const data = await res.json();
-  console.log("Google OAuth token response scopes:", data.scope);
+
+  if (!data.refresh_token) {
+    console.error("Google did not return a refresh_token — user may need to revoke access and reconnect");
+  }
+
   await saveGoogleTokens("demo-user", {
     accessToken: data.access_token,
-    refreshToken: data.refresh_token,
+    refreshToken: data.refresh_token ?? "",
     expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
   });
 
-  return NextResponse.redirect(`${origin}/settings?google=connected`);
+  // Redirect back to where the user came from (e.g. the trip page)
+  const returnTo = state.startsWith("/") ? state : "/dashboard";
+  return NextResponse.redirect(`${origin}${returnTo}?google=connected`);
 }

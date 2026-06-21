@@ -104,8 +104,10 @@ function SlideshowPlayer({ photos, tripTitle, captions, speed = 4 }: {
 
         {/* Images — stack all, show only active */}
         {photos.map((photo, i) => {
-          // Public blob URLs and lh3 URLs both load directly in the browser
-          const src = photo.fileUrl;
+          // Public blob URLs load directly; lh3 URLs need server-side proxy with OAuth token
+          const src = photo.fileUrl.includes("lh3.googleusercontent.com")
+            ? `/api/image-proxy/${photo.id}`
+            : photo.fileUrl;
           return (
             <div key={photo.id}
               className="absolute inset-0 transition-opacity duration-700"
@@ -210,7 +212,7 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const openGooglePicker = async () => {
     // If not connected, send user to connect flow
     if (!googleConnected) {
-      window.location.href = "/api/google-photos/auth";
+      window.location.href = `/api/google-photos/auth?returnTo=/trips/${id}`;
       return;
     }
     setPickerLoading(true);

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
+
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,26 +16,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing file or tripId" }, { status: 400 });
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const blobToken = process.env.BLOB2_READ_WRITE_TOKEN;
+    if (!blobToken) {
+      return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
+    }
 
-    const ext = path.extname(file.name) || ".jpg";
-    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(path.join(uploadDir, filename), buffer);
-
-    const fileUrl = `/uploads/${filename}`;
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const filename = `uploads/${tripId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const isVideo = file.type.startsWith("video/");
+
+    const { url } = await put(filename, file, {
+      access: "public",
+      contentType: file.type,
+      token: blobToken,
+    } as Parameters<typeof put>[2]);
 
     const media = await prisma.media.create({
       data: {
         tripId,
         placeId: placeId || null,
         source: "manual_upload",
-        fileUrl,
-        thumbnailUrl: isVideo ? null : fileUrl,
+        fileUrl: url,
+        thumbnailUrl: isVideo ? null : url,
         mediaType: isVideo ? "video" : "photo",
         caption: caption || null,
         peopleTags: [],
@@ -43,8 +46,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(media, { status: 201 });
   } catch (error) {
-    console.error(error);
+    console.error("Upload error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }
-

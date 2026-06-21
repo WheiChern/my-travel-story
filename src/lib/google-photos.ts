@@ -47,9 +47,11 @@ export async function saveGoogleTokens(userId: string, tokens: GoogleTokens) {
   if (user?.authProvider) {
     try { existing = JSON.parse(user.authProvider); } catch { /* ignore */ }
   }
-  await prisma.user.update({
+  const authProvider = JSON.stringify({ ...existing, google: tokens });
+  await prisma.user.upsert({
     where: { id: userId },
-    data: { authProvider: JSON.stringify({ ...existing, google: tokens }) },
+    update: { authProvider },
+    create: { id: userId, email: `${userId}@demo.local`, authProvider },
   });
 }
 
@@ -135,8 +137,10 @@ export async function searchPhotosByDateRange(
   return photos;
 }
 
-export async function downloadGooglePhoto(baseUrl: string): Promise<Buffer> {
-  const res = await fetch(`${baseUrl}=d`); // =d suffix downloads full resolution
+export async function downloadGooglePhoto(baseUrl: string, accessToken: string): Promise<Buffer> {
+  const res = await fetch(`${baseUrl}=d`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
   if (!res.ok) throw new Error(`Failed to download photo: ${res.status}`);
   return Buffer.from(await res.arrayBuffer());
 }

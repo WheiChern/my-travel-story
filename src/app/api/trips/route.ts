@@ -19,7 +19,8 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json(trips);
   } catch (error) {
-    return NextResponse.json({ error: "Failed to fetch trips" }, { status: 500 });
+    console.error("Trips fetch error:", error);
+    return NextResponse.json({ error: "Failed to fetch trips", detail: String(error) }, { status: 500 });
   }
 }
 

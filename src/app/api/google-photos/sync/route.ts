@@ -1,132 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGoogleToken, searchPhotosByDateRange, downloadGooglePhoto, type GooglePhoto } from "@/lib/google-photos";
+import { getGoogleToken } from "@/lib/google-photos";
 import { prisma } from "@/lib/prisma";
-import Anthropic from "@anthropic-ai/sdk";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { put } from "@vercel/blob";
 
 export const maxDuration = 120;
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
+// This route is a legacy fallback — the primary import path is picker-import.
+// It downloads photos by baseUrl (must be provided externally) and stores them in Blob.
 export async function POST(req: NextRequest) {
   try {
-    const { tripId } = await req.json();
-    if (!tripId) return NextResponse.json({ error: "tripId required" }, { status: 400 });
+    const { tripId, photos } = await req.json() as {
+      tripId: string;
+      photos: Array<{ id: string; baseUrl: string; mimeType: string; createTime?: string }>;
+    };
+
+    if (!tripId || !Array.isArray(photos) || !photos.length) {
+      return NextResponse.json({ error: "tripId and photos array required" }, { status: 400 });
+    }
 
     const token = await getGoogleToken("demo-user");
     if (!token) return NextResponse.json({ error: "Google Photos not connected" }, { status: 401 });
 
-    const trip = await prisma.trip.findUnique({
-      where: { id: tripId },
-      include: { places: true, media: true },
-    });
+    const blobToken = process.env.BLOB2_READ_WRITE_TOKEN;
+    if (!blobToken) return NextResponse.json({ error: "Storage not configured" }, { status: 500 });
+
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, include: { media: true } });
     if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
-    // 1. Fetch all photos within the trip's date range
-    const allPhotos = await searchPhotosByDateRange(token, trip.startDate, trip.endDate);
-    if (!allPhotos.length) {
-      return NextResponse.json({ imported: 0, message: "No photos found for this date range in Google Photos." });
-    }
-
-    // 2. Use Claude to filter photos by relevance to the trip's places + people
-    const relevant = await filterRelevantPhotos(allPhotos, trip);
-
-    // 3. Skip photos already imported (by filename)
-    const existingSourceIds = new Set(trip.media.map((m) => m.sourceId ?? ""));
-    const toImport = relevant.filter((p) => !existingSourceIds.has(p.id));
-
-    if (!toImport.length) {
-      return NextResponse.json({ imported: 0, message: "All relevant photos are already imported." });
-    }
-
-    // 4. Download and save photos
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadsDir, { recursive: true });
-
+    const existingIds = new Set(trip.media.map((m: { sourceId: string | null }) => m.sourceId ?? ""));
     const imported: string[] = [];
-    for (const photo of toImport.slice(0, 50)) { // cap at 50 per sync
+    const errors: string[] = [];
+
+    for (const photo of photos.slice(0, 50)) {
+      if (existingIds.has(photo.id)) continue;
       try {
-        const buffer = await downloadGooglePhoto(photo.baseUrl);
-        const filename = `google_${photo.id}_${photo.filename}`;
-        const filePath = path.join(uploadsDir, filename);
-        await writeFile(filePath, buffer);
+        const photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!photoRes.ok) { errors.push(`Download failed ${photoRes.status} for ${photo.id}`); continue; }
+
+        const blob = await photoRes.blob();
+        const ext = (photo.mimeType ?? "").includes("png") ? "png" : "jpg";
+        const { url } = await put(`photos/${tripId}/${photo.id}.${ext}`, blob, {
+          access: "public",
+          contentType: photo.mimeType ?? "image/jpeg",
+          token: blobToken,
+        } as Parameters<typeof put>[2]);
 
         await prisma.media.create({
           data: {
             tripId,
             sourceId: photo.id,
-            fileUrl: `/uploads/${filename}`,
+            fileUrl: url,
             source: "google_photos",
             mediaType: "photo",
-            takenAt: photo.creationTime ? new Date(photo.creationTime) : null,
-            caption: photo.description ?? null,
+            takenAt: photo.createTime ? new Date(photo.createTime) : null,
           },
         });
-
-        imported.push(filename);
-      } catch {
-        // skip failed individual photo
+        imported.push(photo.id);
+      } catch (e) {
+        errors.push(String(e));
       }
     }
 
-    return NextResponse.json({
-      found: allPhotos.length,
-      relevant: relevant.length,
-      imported: imported.length,
-      capped: toImport.length > 50,
-    });
+    return NextResponse.json({ imported: imported.length, errors: errors.slice(0, 3) });
   } catch (err) {
-    console.error("Google Photos sync error:", err);
+    console.error("Sync error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
-  }
-}
-
-async function filterRelevantPhotos(photos: GooglePhoto[], trip: {
-  title: string;
-  startDate: Date;
-  endDate: Date;
-  places: Array<{ city: string; country: string }>;
-  companions: string[];
-}): Promise<GooglePhoto[]> {
-  // If ≤20 photos, skip AI filtering — just take them all
-  if (photos.length <= 20) return photos;
-
-  // Build a photo index for Claude to evaluate
-  // Send thumbnails (up to 10) to Claude for context, then ask it to estimate relevance
-  const destinations = trip.places.map((p) => `${p.city}, ${p.country}`).join(" / ");
-  const companions = trip.companions.join(", ") || "not specified";
-
-  const prompt = `You are filtering a list of photos from Google Photos to find ones relevant to a specific trip.
-
-Trip: "${trip.title}"
-Destinations: ${destinations}
-Travel companions: ${companions}
-Date range: ${trip.startDate.toDateString()} to ${trip.endDate.toDateString()}
-
-Here are ${photos.length} photos taken during this date range. Evaluate each by filename and return the indices (0-based) of photos that are likely relevant to this trip (i.e., taken at the destination, NOT photos of home, work, or unrelated activities).
-
-Photo filenames:
-${photos.map((p, i) => `${i}: ${p.filename}`).join("\n")}
-
-Return ONLY a JSON array of relevant indices, e.g. [0, 2, 5]. Be inclusive — include anything that could plausibly be from this trip.`;
-
-  try {
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = response.content[0].type === "text" ? response.content[0].text : "[]";
-    const match = text.match(/\[[\d,\s]*\]/);
-    if (!match) return photos; // if parsing fails, return all
-
-    const indices: number[] = JSON.parse(match[0]);
-    return indices
-      .filter((i) => i >= 0 && i < photos.length)
-      .map((i) => photos[i]);
-  } catch {
-    return photos; // on error, return all photos
   }
 }

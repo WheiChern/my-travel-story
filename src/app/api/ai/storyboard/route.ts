@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
-  const totalCost = trip.costItems.reduce((s, c) => s + c.amount, 0);
+  const totalCost = trip.costItems.reduce((s: number, c: { amount: number }) => s + c.amount, 0);
   const nights = Math.ceil(
     (new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -35,13 +35,13 @@ Trip: "${trip.title}"
 Type: ${trip.tripType}
 Dates: ${trip.startDate.toDateString()} to ${trip.endDate.toDateString()} (${nights} nights)
 ${trip.companions.length ? `Companions: ${trip.companions.join(", ")}` : "Solo trip"}
-Countries: ${trip.places.map((p) => p.country).filter((v, i, a) => a.indexOf(v) === i).join(", ")}
-Cities/Places: ${trip.places.map((p) => `${p.name} (${p.city})`).join(", ")}
+Countries: ${trip.places.map((p: { country: string }) => p.country).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).join(", ")}
+Cities/Places: ${trip.places.map((p: { name: string; city: string }) => `${p.name} (${p.city})`).join(", ")}
 
 Itinerary:
-${trip.itineraryItems.map((i) => `- ${new Date(i.date).toDateString()}: ${i.title}${i.description ? " — " + i.description : ""}`).join("\n") || "No itinerary recorded"}
+${trip.itineraryItems.map((i: { date: Date; title: string; description?: string | null }) => `- ${new Date(i.date).toDateString()}: ${i.title}${i.description ? " — " + i.description : ""}`).join("\n") || "No itinerary recorded"}
 
-Media captions: ${trip.media.map((m) => m.caption).filter(Boolean).join("; ") || "None"}
+Media captions: ${trip.media.map((m: { caption?: string | null }) => m.caption).filter(Boolean).join("; ") || "None"}
 
 Total cost: $${totalCost.toLocaleString()} ${trip.currency} across ${trip.costItems.length} categories
 

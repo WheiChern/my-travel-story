@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ imported: 0, message: "No photos selected in picker." });
     }
 
-    const existingIds = new Set(trip.media.map((m) => m.sourceId ?? ""));
+    const existingIds = new Set(trip.media.map((m: { sourceId: string | null }) => m.sourceId ?? ""));
     // Use public blob store (BLOB2_*) — public blobs are directly accessible by browsers
     const blobToken = process.env.BLOB2_READ_WRITE_TOKEN;
     const hasBlobToken = !!blobToken;
@@ -72,17 +72,11 @@ export async function POST(req: NextRequest) {
         let fileUrl: string;
 
         if (hasBlobToken) {
-          // Try without auth first, then with Google OAuth token as fallback
-          let photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
+          // Google Photos lh3 URLs require the OAuth token — always send it
+          const photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
+            headers: { Authorization: `Bearer ${token}` },
             signal: AbortSignal.timeout(30000),
           });
-
-          if (!photoRes.ok) {
-            photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
-              headers: { Authorization: `Bearer ${token}` },
-              signal: AbortSignal.timeout(30000),
-            });
-          }
 
           if (photoRes.ok) {
             try {
