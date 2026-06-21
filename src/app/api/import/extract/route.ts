@@ -7,10 +7,13 @@ export const maxDuration = 120;
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".heic", ".webp"];
-const MEDIA_TYPES: Record<string, string> = {
-  ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-  ".png": "image/png", ".heic": "image/jpeg", ".webp": "image/webp",
-};
+
+function detectImageMediaType(buffer: Buffer): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
+  if (buffer[0] === 0x89 && buffer[1] === 0x50) return "image/png";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return "image/jpeg";
+  if (buffer[0] === 0x52 && buffer[1] === 0x49) return "image/webp"; // RIFF
+  return "image/jpeg"; // fallback for HEIC and unknown
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,7 +47,7 @@ async function extractFile(path: string): Promise<ExtractedData | null> {
     if (!buffer) return null;
 
     if (IMAGE_EXTS.includes(ext)) {
-      return extractFromImage(buffer, path, MEDIA_TYPES[ext] ?? "image/jpeg");
+      return extractFromImage(buffer, path, detectImageMediaType(buffer));
     } else if (ext === ".pdf") {
       return extractFromPdf(buffer, path);
     } else if (ext === ".docx" || ext === ".doc") {
