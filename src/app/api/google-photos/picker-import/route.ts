@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGoogleToken } from "@/lib/google-photos";
 import { prisma } from "@/lib/prisma";
+import { put } from "@vercel/blob";
 
 export const maxDuration = 120;
 
@@ -56,17 +57,59 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ imported: 0, message: "No photos selected in picker." });
     }
 
-    // Skip already-imported photos
     const existingIds = new Set(trip.media.map((m) => m.sourceId ?? ""));
+    // Use public blob store (BLOB2_*) — public blobs are directly accessible by browsers
+    const blobToken = process.env.BLOB2_READ_WRITE_TOKEN;
+    const hasBlobToken = !!blobToken;
 
     const imported: string[] = [];
+    const errors: string[] = [];
+
     for (const photo of photos) {
       if (!photo.baseUrl || existingIds.has(photo.id)) continue;
 
       try {
-        // Store the baseUrl with =w2048-h2048 for a high-res display URL.
-        // Google Picker baseUrls are valid for ~60 minutes without auth.
-        const fileUrl = `${photo.baseUrl}=w2048-h2048`;
+        let fileUrl: string;
+
+        if (hasBlobToken) {
+          // Try without auth first, then with Google OAuth token as fallback
+          let photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
+            signal: AbortSignal.timeout(30000),
+          });
+
+          if (!photoRes.ok) {
+            photoRes = await fetch(`${photo.baseUrl}=w2048-h2048`, {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: AbortSignal.timeout(30000),
+            });
+          }
+
+          if (photoRes.ok) {
+            try {
+              const blob = await photoRes.blob();
+              const ext = photo.mimeType.includes("png") ? "png" : "jpg";
+              const { url } = await put(`photos/${tripId}/${photo.id}.${ext}`, blob, {
+                access: "public",
+                contentType: photo.mimeType,
+                token: blobToken,
+              } as Parameters<typeof put>[2]);
+              fileUrl = url;
+            } catch (blobErr) {
+              const msg = `Blob upload failed: ${blobErr instanceof Error ? blobErr.message : String(blobErr)}`;
+              errors.push(msg);
+              console.error(msg);
+              fileUrl = `${photo.baseUrl}=w2048-h2048`;
+            }
+          } else {
+            const errText = await photoRes.text().catch(() => "");
+            const msg = `Download failed ${photoRes.status}: ${errText.substring(0, 100)}`;
+            errors.push(msg);
+            console.error(`Photo ${photo.id} ${msg}`);
+            fileUrl = `${photo.baseUrl}=w2048-h2048`;
+          }
+        } else {
+          fileUrl = `${photo.baseUrl}=w2048-h2048`;
+        }
 
         await prisma.media.create({
           data: {
@@ -81,11 +124,22 @@ export async function POST(req: NextRequest) {
 
         imported.push(photo.id);
       } catch (e) {
+        const msg = `Save failed: ${e instanceof Error ? e.message : String(e)}`;
+        errors.push(msg);
         console.error("Failed to save photo", photo.id, e);
       }
     }
 
-    return NextResponse.json({ selected: photos.length, imported: imported.length });
+    return NextResponse.json({
+      selected: photos.length,
+      imported: imported.length,
+      errors: errors.slice(0, 3),
+      message: imported.length > 0
+        ? `${imported.length}/${photos.length} photos imported${hasBlobToken ? " permanently" : " (temporary)"}`
+        : errors.length > 0
+        ? `Import failed: ${errors[0]}`
+        : `No photos found in picker session`,
+    });
   } catch (err) {
     console.error("Picker import error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

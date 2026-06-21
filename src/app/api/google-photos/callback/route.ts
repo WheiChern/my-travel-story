@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { saveGoogleTokens } from "@/lib/google-photos";
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
+  const { searchParams, origin } = new URL(req.url);
   const code = searchParams.get("code");
   const error = searchParams.get("error");
 
   if (error || !code) {
-    return NextResponse.redirect("http://localhost:3000/settings?google=error");
+    return NextResponse.redirect(`${origin}/settings?google=error`);
   }
 
   const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -17,13 +17,15 @@ export async function GET(req: NextRequest) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI ?? "http://localhost:3000/api/google-photos/callback",
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI ?? `${origin}/api/google-photos/callback`,
       grant_type: "authorization_code",
     }),
   });
 
   if (!res.ok) {
-    return NextResponse.redirect("http://localhost:3000/settings?google=error");
+    const errText = await res.text();
+    console.error("Google token exchange failed:", errText);
+    return NextResponse.redirect(`${origin}/settings?google=error`);
   }
 
   const data = await res.json();
@@ -34,5 +36,5 @@ export async function GET(req: NextRequest) {
     expiresAt: Date.now() + (data.expires_in ?? 3600) * 1000,
   });
 
-  return NextResponse.redirect("http://localhost:3000/settings?google=connected");
+  return NextResponse.redirect(`${origin}/settings?google=connected`);
 }
