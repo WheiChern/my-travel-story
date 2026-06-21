@@ -27,11 +27,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const trip = await prisma.trip.update({
       where: { id },
       data: {
-        ...(body.title && { title: body.title }),
+        ...(body.title !== undefined && { title: body.title }),
         ...(body.summary !== undefined && { summary: body.summary }),
-        ...(body.tripType && { tripType: body.tripType }),
-        ...(body.companions && { companions: body.companions }),
+        ...(body.tripType !== undefined && { tripType: body.tripType }),
+        ...(body.companions !== undefined && { companions: body.companions }),
         ...(body.totalCost !== undefined && { totalCost: body.totalCost }),
+        ...(body.startDate !== undefined && { startDate: new Date(body.startDate) }),
+        ...(body.endDate !== undefined && { endDate: new Date(body.endDate) }),
+        ...(body.currency !== undefined && { currency: body.currency }),
       },
       include: {
         places: { orderBy: { orderIndex: "asc" } },

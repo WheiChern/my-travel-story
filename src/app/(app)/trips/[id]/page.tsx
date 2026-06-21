@@ -201,6 +201,9 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
   const [savingCaption, setSavingCaption] = useState<string | null>(null);
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<Partial<StoryboardData>>({});
+  const [editingTrip, setEditingTrip] = useState(false);
+  const [tripDraft, setTripDraft] = useState<{ title: string; startDate: string; endDate: string; tripType: string; companions: string; currency: string; summary: string }>({ title: "", startDate: "", endDate: "", tripType: "", companions: "", currency: "", summary: "" });
+  const [savingTrip, setSavingTrip] = useState(false);
 
   useEffect(() => {
     fetch("/api/google-photos/status").then(r => r.json()).then(d => setGoogleConnected(d.connected));
@@ -232,6 +235,39 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
       } : t);
     } finally {
       setSavingCaption(null);
+    }
+  };
+
+  const openTripEdit = () => {
+    if (!trip) return;
+    setTripDraft({
+      title: trip.title,
+      startDate: trip.startDate.split("T")[0],
+      endDate: trip.endDate.split("T")[0],
+      tripType: trip.tripType,
+      companions: trip.companions.join(", "),
+      currency: trip.currency,
+      summary: trip.summary ?? "",
+    });
+    setEditingTrip(true);
+  };
+
+  const saveTripEdit = async () => {
+    if (!trip) return;
+    setSavingTrip(true);
+    try {
+      const companions = tripDraft.companions.split(",").map(s => s.trim()).filter(Boolean);
+      const res = await fetch(`/api/trips/${trip.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...tripDraft, companions }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const updated = await res.json();
+      setTrip(updated);
+      setEditingTrip(false);
+    } finally {
+      setSavingTrip(false);
     }
   };
 
@@ -387,7 +423,14 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
               <span className="text-xs font-medium px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: color }}>{TRIP_TYPE_LABELS[trip.tripType]}</span>
               <span className="text-xs" style={{ color: "rgba(248,245,240,0.4)" }}>{formatDate(trip.startDate)} — {formatDate(trip.endDate)}</span>
             </div>
-            <h1 className="text-2xl font-bold" style={{ color: "#F8F5F0" }}>{trip.title}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold" style={{ color: "#F8F5F0" }}>{trip.title}</h1>
+              <button onClick={openTripEdit} title="Edit trip details"
+                className="p-1.5 rounded-lg transition-opacity hover:opacity-80 flex-shrink-0"
+                style={{ background: "rgba(200,155,115,0.15)", color: "#C89B73" }}>
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
             {trip.companions.length > 0 && <p className="text-sm mt-0.5" style={{ color: "rgba(248,245,240,0.45)" }}>with {trip.companions.join(", ")}</p>}
           </div>
         </div>
@@ -1012,6 +1055,94 @@ export default function TripDetailPage({ params }: { params: Promise<{ id: strin
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* ── Edit Trip Panel ── */}
+      {editingTrip && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+          <div className="w-full max-w-lg rounded-2xl p-6 space-y-4 overflow-y-auto max-h-[90vh]"
+            style={{ background: "#2a2a2a", border: "1px solid rgba(200,155,115,0.25)" }}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-lg" style={{ color: "#F8F5F0" }}>Edit Trip Details</h2>
+              <button onClick={() => setEditingTrip(false)} style={{ color: "rgba(248,245,240,0.4)" }}><X className="w-5 h-5" /></button>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Trip Title</label>
+              <input value={tripDraft.title} onChange={e => setTripDraft(d => ({ ...d, title: e.target.value }))}
+                className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Start Date</label>
+                <input type="date" value={tripDraft.startDate} onChange={e => setTripDraft(d => ({ ...d, startDate: e.target.value }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>End Date</label>
+                <input type="date" value={tripDraft.endDate} onChange={e => setTripDraft(d => ({ ...d, endDate: e.target.value }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Trip Type</label>
+                <select value={tripDraft.tripType} onChange={e => setTripDraft(d => ({ ...d, tripType: e.target.value }))}
+                  className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }}>
+                  {Object.entries(TRIP_TYPE_LABELS).map(([k, v]) => <option key={k} value={k} style={{ background: "#2a2a2a" }}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Currency</label>
+                <input value={tripDraft.currency} onChange={e => setTripDraft(d => ({ ...d, currency: e.target.value.toUpperCase().slice(0, 3) }))}
+                  placeholder="SGD"
+                  className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>
+                Travel Companions <span style={{ color: "rgba(248,245,240,0.35)", textTransform: "none", fontSize: "0.7rem" }}>(comma-separated)</span>
+              </label>
+              <input value={tripDraft.companions} onChange={e => setTripDraft(d => ({ ...d, companions: e.target.value }))}
+                placeholder="Alice, Bob, Carol"
+                className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none"
+                style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+              <p className="text-xs mt-1" style={{ color: "rgba(248,245,240,0.3)" }}>
+                {tripDraft.companions.split(",").filter(s => s.trim()).length + 1} travellers total (including you)
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium uppercase tracking-wider block mb-1" style={{ color: "#C89B73" }}>Trip Summary</label>
+              <textarea rows={3} value={tripDraft.summary} onChange={e => setTripDraft(d => ({ ...d, summary: e.target.value }))}
+                placeholder="A short description of this trip…"
+                className="w-full rounded-xl px-3 py-2 text-sm leading-relaxed resize-y focus:outline-none"
+                style={{ background: "rgba(248,245,240,0.07)", border: "1px solid rgba(200,155,115,0.2)", color: "#F8F5F0" }} />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setEditingTrip(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm"
+                style={{ background: "rgba(248,245,240,0.07)", color: "rgba(248,245,240,0.5)" }}>
+                Cancel
+              </button>
+              <button onClick={saveTripEdit} disabled={savingTrip}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: "#C89B73", color: "#222" }}>
+                {savingTrip ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {savingTrip ? "Saving…" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
