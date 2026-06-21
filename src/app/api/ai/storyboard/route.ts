@@ -84,7 +84,8 @@ Return ONLY valid JSON.`;
 
     return NextResponse.json(storyboard);
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "AI generation failed" }, { status: 500 });
+    console.error("Storyboard error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
